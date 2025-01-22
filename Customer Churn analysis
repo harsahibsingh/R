@@ -1,0 +1,74 @@
+# Load libraries
+library(tidyverse)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(pROC)
+library(e1071)
+library(ggplot2)
+
+# Load data
+data <- read.csv("Cleaned_Telco_Churn_Data.csv")
+
+# Preprocessing
+data <- data %>%
+  mutate(across(c(SeniorCitizen, Partner, Dependents, PaperlessBilling, Churn), as.factor)) %>%
+  mutate(TotalCharges = as.numeric(TotalCharges)) %>%
+  filter(!is.na(TotalCharges))
+
+# One-hot encoding for categorical variables
+data_dummies <- dummyVars("~ .", data = data)
+data_processed <- data.frame(predict(data_dummies, newdata = data))
+
+# Normalize numerical features for k-NN
+normalize <- function(x) { (x - min(x)) / (max(x) - min(x)) }
+data_processed[, c("tenure", "MonthlyCharges", "TotalCharges")] <- 
+  lapply(data_processed[, c("tenure", "MonthlyCharges", "TotalCharges")], normalize)
+
+# Train-test split
+set.seed(123)
+trainIndex <- createDataPartition(data$Churn, p = 0.7, list = FALSE)
+train <- data_processed[trainIndex, ]
+test <- data_processed[-trainIndex, ]
+
+# Logistic Regression
+log_model <- glm(Churn ~ ., data = train, family = "binomial")
+log_pred <- predict(log_model, test, type = "response")
+log_pred_class <- ifelse(log_pred > 0.5, 1, 0)
+log_cm <- confusionMatrix(as.factor(log_pred_class), as.factor(test$Churn))
+
+# Decision Tree
+tree_model <- rpart(Churn ~ ., data = train, method = "class", control = rpart.control(cp = 0.01))
+tree_pred <- predict(tree_model, test, type = "class")
+tree_cm <- confusionMatrix(tree_pred, as.factor(test$Churn))
+
+# k-NN
+train_knn <- train %>% select(-Churn)
+test_knn <- test %>% select(-Churn)
+knn_pred <- knn(train = train_knn, test = test_knn, cl = train$Churn, k = 5)
+knn_cm <- confusionMatrix(knn_pred, as.factor(test$Churn))
+
+# Evaluate models
+log_roc <- roc(as.numeric(test$Churn), as.numeric(log_pred))
+tree_roc <- roc(as.numeric(test$Churn), predict(tree_model, test)[, 2])
+knn_roc <- roc(as.numeric(test$Churn), as.numeric(knn_pred))
+
+# Feature importance for Decision Tree
+rpart.plot(tree_model)
+importance <- varImp(tree_model)
+plot(importance)
+
+# Partial dependence plots (example for tenure)
+partialPlot(tree_model, train, "tenure")
+
+# ROC Curve comparison
+plot(log_roc, col = "blue", main = "ROC Curves")
+lines(tree_roc, col = "red")
+lines(knn_roc, col = "green")
+legend("bottomright", legend = c("Logistic Regression", "Decision Tree", "k-NN"),
+       col = c("blue", "red", "green"), lty = 1)
+
+# Print confusion matrices
+print(log_cm)
+print(tree_cm)
+print(knn_cm)
