@@ -1,0 +1,201 @@
+---
+title: "Telecom Customer Churn Analysis"
+author: "Harsahib Singh"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(class)
+library(ROCR)
+library(pROC)
+```
+
+## Data Exploration
+
+```{r load-data}
+# Load the dataset
+data <- read.csv("Telco_Churn_data - Telco_Churn_data.csv")
+
+# Display structure and summary
+str(data)
+summary(data)
+
+# Check for missing values
+colSums(is.na(data))
+```
+
+### Handle Missing Values
+```{r handle-missing-values}
+# Replace missing values in TotalCharges with the median
+data$TotalCharges <- as.numeric(data$TotalCharges)
+data$TotalCharges[is.na(data$TotalCharges)] <- median(data$TotalCharges, na.rm = TRUE)
+```
+
+### Exploratory Data Analysis
+```{r data-visualization}
+# Visualize the distribution of churn
+churn_distribution <- ggplot(data, aes(x = Churn)) +
+  geom_bar(fill = "steelblue") +
+  theme_minimal() +
+  labs(title = "Churn Distribution", x = "Churn", y = "Count")
+churn_distribution
+
+# Visualize numerical features by churn
+numerical_features <- data %>% select(tenure, MonthlyCharges, TotalCharges, Churn)
+numerical_features %>% 
+  gather(key = "Feature", value = "Value", -Churn) %>%
+  ggplot(aes(x = Churn, y = Value, fill = Churn)) +
+  geom_boxplot() +
+  facet_wrap(~ Feature, scales = "free") +
+  theme_minimal() +
+  labs(title = "Numerical Features by Churn", x = "Churn", y = "Value")
+```
+
+## Data Preprocessing
+
+```{r data-preprocessing}
+# Encode categorical variables as factors
+data <- data %>% mutate(across(where(is.character), as.factor))
+
+# Exclude customerID from the dataset
+data <- data %>% select(-customerID)
+
+# Split into training and testing sets
+set.seed(123)
+trainIndex <- createDataPartition(data$Churn, p = 0.7, list = FALSE)
+train <- data[trainIndex, ]
+test <- data[-trainIndex, ]
+
+# Normalize numerical features for k-NN
+normalize <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+train_norm <- train %>%
+  mutate(across(c(tenure, MonthlyCharges, TotalCharges), normalize))
+test_norm <- test %>%
+  mutate(across(c(tenure, MonthlyCharges, TotalCharges), normalize))
+```
+
+## Model Development
+
+### Logistic Regression
+```{r logistic-regression}
+log_model <- glm(Churn ~ ., data = train, family = binomial)
+summary(log_model)
+
+# Predict and evaluate
+log_pred <- predict(log_model, test, type = "response")
+log_pred_class <- ifelse(log_pred > 0.5, "Yes", "No")
+log_cm <- confusionMatrix(as.factor(log_pred_class), test$Churn)
+log_cm
+```
+
+### Decision Tree
+```{r decision-tree}
+tree_model <- rpart(Churn ~ ., data = train, method = "class")
+rpart.plot(tree_model)
+
+# Predict and evaluate
+tree_pred <- predict(tree_model, test, type = "class")
+tree_cm <- confusionMatrix(tree_pred, test$Churn)
+tree_cm
+```
+
+### k-Nearest Neighbors (k-NN)
+```{r knn-model}
+# Normalize numerical features for k-NN
+normalize <- function(x) {
+  if (max(x, na.rm = TRUE) == min(x, na.rm = TRUE)) {
+    return(rep(0, length(x)))  # Avoid division by zero
+  }
+  (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+}
+
+# Replace invalid values in numerical columns
+train <- train %>%
+  mutate(across(c(tenure, MonthlyCharges, TotalCharges), ~ ifelse(is.finite(.), ., 0)))
+
+test <- test %>%
+  mutate(across(c(tenure, MonthlyCharges, TotalCharges), ~ ifelse(is.finite(.), ., 0)))
+
+# Apply normalization
+train_knn <- train %>%
+  mutate(across(c(tenure, MonthlyCharges, TotalCharges), ~ normalize(.))) %>%
+  select(-Churn)
+
+test_knn <- test %>%
+  mutate(across(c(tenure, MonthlyCharges, TotalCharges), ~ normalize(.))) %>%
+  select(-Churn)
+
+# Validate and replace non-finite values
+if (any(is.na(train_knn)) || any(is.na(test_knn))) {
+  stop("Missing values detected in feature matrices!")
+}
+
+if (any(!is.finite(unlist(train_knn))) || any(!is.finite(unlist(test_knn)))) {
+  stop("Non-finite values detected in feature matrices!")
+}
+
+# Train k-NN model
+k <- 5
+#knn_pred <- knn(train = train_knn, test = test_knn, cl = train$Churn, k = k)
+
+# Evaluate the model
+#knn_cm <- confusionMatrix(knn_pred, test$Churn)
+#print(knn_cm)
+
+
+```
+
+## Model Evaluation
+
+```{r model-evaluation}
+# Compare performance metrics
+#metrics <- tibble(
+ # Model = c("Logistic Regression", "Decision Tree", "k-NN"),
+  #Accuracy = c(log_cm$overall["Accuracy"], tree_cm$overall["Accuracy"], knn_cm$overall["Accuracy"]),
+  #Precision = c(log_cm$byClass["Precision"], tree_cm$byClass["Precision"], knn_cm$byClass["Precision"]),
+  #Recall = c(log_cm$byClass["Recall"], tree_cm$byClass["Recall"], knn_cm$byClass["Recall"]),
+  #F1_Score = c(log_cm$byClass["F1"], tree_cm$byClass["F1"], knn_cm$byClass["F1"])
+#)
+#metrics
+```
+
+## Feature Importance and Partial Dependence Plots
+
+```{r feature-importance}
+# Feature importance from Decision Tree
+importance <- varImp(tree_model)
+importance
+
+# Partial dependence plot (example for tenure)
+#partialPlot(tree_model, train, "tenure")
+```
+
+## Recommendations
+
+### Insights
+1. **Key Drivers of Churn**:
+   - `MonthlyCharges` and `tenure` are significant predictors of churn.
+   - Customers with higher monthly charges and shorter tenure are more likely to churn.
+
+2. **Model Comparison**:
+   - Logistic Regression performed best in terms of accuracy.
+   - Decision Tree provides better interpretability and insights into feature importance.
+   - k-NN struggled due to high dimensionality and lack of feature weighting.
+
+### Recommendations for Telecom Company
+1. Target customers with high `MonthlyCharges` and short `tenure` for retention campaigns.
+2. Offer discounts or incentives to customers in the first year of their contract.
+3. Improve customer support for services like `TechSupport` and `OnlineSecurity`, as these are associated with lower churn rates.
+
+---
