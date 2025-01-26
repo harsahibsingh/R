@@ -1,0 +1,596 @@
+---
+title: "MBA Dissertation"
+author: "Harsahib Singh"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+install.packages("dplyr")
+install.packages("ggplot2")
+install.packages("readxl")
+install.packages("reshape2")
+```
+
+```{r}
+# Load necessary libraries
+# dplyr: For data manipulation (e.g., joins, group_by, summarise)
+# ggplot2: For data visualization (e.g., boxplots)
+# readxl: To read Excel files
+# reshape2: For reshaping data into a format suitable for ggplot
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(reshape2)
+
+# Load the datasets
+# Reading the datasets from their respective files
+# Each dataset corresponds to specific casino data, like spending, survey responses, and player demographics
+casino_services <- read_excel("Casino Services and Average Spending.xlsx", sheet = "Player Spending Habits")
+gaming_survey <- read_excel("Gaming and Social Media Survey Results.xlsx", sheet = "Gaming and Social Media")
+player_info <- read_excel("General Player Information.xlsx", sheet = "General Player Information")
+gaming_activity <- read.csv("casGame.csv")  # Gaming activity data stored in a CSV file
+
+# Clean column names to make them compatible with R
+# Replacing spaces and special characters in column names with underscores for easier handling
+names(casino_services) <- gsub("\\$", "", gsub(" ", "_", names(casino_services)))
+names(gaming_survey) <- gsub("\\$", "", gsub(" ", "_", names(gaming_survey)))
+names(player_info) <- gsub("\\$", "", gsub(" ", "_", names(player_info)))
+
+# Merge datasets using 'player_card_id'
+# Ensure 'player_card_id' is an integer for consistent merging
+casino_services$player_card_id <- as.integer(casino_services$player_card_id)
+gaming_survey$player_card_id <- as.integer(gaming_survey$player_card_id)
+player_info$player_card_id <- as.integer(player_info$player_card_id)
+
+# Merging all datasets on the common key 'player_card_id'
+# This creates a unified dataset with player spending, gaming preferences, and demographics
+merged_data <- casino_services %>%
+  inner_join(gaming_survey, by = "player_card_id") %>%
+  inner_join(player_info, by = "player_card_id")
+
+# Descriptive statistics for spending metrics
+# Identifying columns related to spending metrics
+spending_columns <- c("spent_on_dining_per_visit", 
+                      "spent_on_gaming_per_visit", 
+                      "spent_on_entertainment/non-gaming_per_visit", 
+                      "spent_on_casino_services_per_visit", 
+                      "Spent_per_stay", 
+                      "average_number_of_days_per_stay")
+
+# Check column names in merged_data to ensure consistency with spending_columns
+print(names(merged_data))  # Display all column names in the merged dataset for validation
+
+# Update the spending_columns list to match actual column names (adjusting for underscores)
+spending_columns <- c(
+  "_spent_on_dining_per_visit",
+  "_spent_on_gaming_per_visit",
+  "_spent_on_entertainment/non-gaming_per_visit",
+  "_spent_on_casino_services_per_visit",
+  "Spent_per_stay",
+  "average_number_of_days_per_stay"
+)
+
+# Calculate descriptive statistics for spending metrics
+# Summary statistics (mean, median, min, max, etc.) for each spending-related column
+spending_stats <- summary(merged_data[, spending_columns])
+print(spending_stats)  # Print descriptive statistics for spending metrics
+
+# Summarize player demographics by gender
+# Grouping data by 'gender' and calculating age statistics (mean, standard deviation, min, max, count)
+demographics_summary <- merged_data %>%
+  group_by(gender) %>%
+  summarise(
+    mean_age = mean(age, na.rm = TRUE),  # Average age
+    sd_age = sd(age, na.rm = TRUE),     # Standard deviation of age
+    min_age = min(age, na.rm = TRUE),   # Minimum age
+    max_age = max(age, na.rm = TRUE),   # Maximum age
+    count = n()                         # Count of players in each gender group
+  )
+
+# Create a boxplot for spending metrics
+# Melt the data (reshape it) to prepare for visualization with ggplot2
+spending_data <- melt(merged_data[, spending_columns])
+
+# Generate a boxplot to visualize the distribution of spending metrics
+ggplot(spending_data, aes(x = variable, y = value)) +
+  geom_boxplot(fill = "skyblue", color = "black") +  # Boxplot with blue fill and black borders
+  labs(
+    title = "Spending Metrics Distribution",        # Title of the plot
+    x = "Metrics",                                  # Label for x-axis
+    y = "Amount in $"                               # Label for y-axis
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels for better readability
+  )
+
+# Print results
+# Display the descriptive statistics for spending metrics and demographic summary
+print("Descriptive Statistics for Spending Metrics:")
+print(spending_stats)
+
+print("Demographics Summary:")
+print(demographics_summary)
+
+```
+
+```{r}
+install.packages("ggcorrplot")
+install.packages("corrplot")
+
+```
+
+```{r}
+
+# Load necessary libraries
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(corrplot)
+
+# If ggcorrplot is available, include it
+if (!requireNamespace("ggcorrplot", quietly = TRUE)) {
+  message("Skipping ggcorrplot visualization as the package is not installed.")
+} else {
+  library(ggcorrplot)
+}
+
+# Select relevant numerical columns for correlation analysis
+correlation_columns <- c(
+  "_spent_on_dining_per_visit",
+  "_spent_on_gaming_per_visit",
+  "_spent_on_entertainment/non-gaming_per_visit",
+  "_spent_on_casino_services_per_visit",
+  "Spent_per_stay",
+  "average_number_of_days_per_stay",
+  "age"
+)
+
+# Subset the data with selected columns
+correlation_data <- merged_data[, correlation_columns]
+
+# Compute correlation matrix
+correlation_matrix <- cor(correlation_data, use = "complete.obs")
+
+# Print the correlation matrix
+print("Correlation Matrix:")
+print(correlation_matrix)
+
+# 1. Visualization Method 1: ggcorrplot
+if (requireNamespace("ggcorrplot", quietly = TRUE)) {
+  ggcorrplot(correlation_matrix, 
+             method = "circle",  # Circle size and color represent correlation strength
+             type = "lower",     # Show only the lower triangle
+             lab = TRUE,         # Add correlation coefficient labels
+             title = "Correlation Heatmap (ggcorrplot)",
+             lab_size = 3)
+}
+
+# 2. Visualization Method 2: corrplot
+corrplot(correlation_matrix, 
+         method = "color",  # Use color shading to represent correlations
+         type = "lower",    # Show only the lower triangle
+         tl.col = "black",  # Text label color
+         tl.srt = 45,       # Rotate text labels
+         title = "Correlation Matrix (corrplot)", 
+         addCoef.col = "black",  # Add correlation coefficients
+         mar = c(0, 0, 1, 0))    # Adjust margins for the title
+
+# 3. Visualization Method 3: ggplot2 Heatmap
+# Melt the correlation matrix into a long format
+correlation_melted <- melt(correlation_matrix)
+
+# Create the heatmap using ggplot2
+ggplot(correlation_melted, aes(Var1, Var2, fill = value)) +
+  geom_tile(color = "white") +                          # Create the heatmap
+  scale_fill_gradient2(low = "blue", high = "red",     # Gradient: blue (negative) to red (positive)
+                       mid = "white", midpoint = 0, 
+                       limit = c(-1, 1), space = "Lab", 
+                       name = "Correlation") +
+  theme_minimal() +                                    # Minimal theme
+  labs(title = "Correlation Heatmap (ggplot2)", x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.text.y = element_text(hjust = 1)) +
+  coord_fixed()  # Keep square aspect ratio
+
+
+```
+```{r}
+install.packages("cluster")
+install.packages("dbscan")
+install.packages("ggplot2")
+install.packages("dbscan")
+install.packages("factoextra")
+
+```
+
+```{r}
+# Load necessary libraries
+library(dplyr)       # For data manipulation
+library(ggplot2)     # For data visualization
+library(cluster)     # For PAM and Silhouette analysis
+library(dbscan)      # For DBSCAN clustering
+library(factoextra)  # For clustering visualization and diagnostics
+
+# Step 1: Feature Selection
+# Select relevant numerical columns for clustering
+clustering_columns <- c(
+  "_spent_on_dining_per_visit",
+  "_spent_on_gaming_per_visit",
+  "_spent_on_entertainment/non-gaming_per_visit",
+  "_spent_on_casino_services_per_visit",
+  "Spent_per_stay",
+  "average_number_of_days_per_stay",
+  "age"
+)
+
+# Subset the data
+clustering_data <- merged_data[, clustering_columns]
+
+# Step 2: Data Normalization
+# Normalize the data using z-scores
+normalized_data <- scale(clustering_data)
+
+# Step 3: Determine Optimal Clusters
+# Use the Elbow Method to identify the best number of clusters for K-Means
+wss <- sapply(1:10, function(k) {
+  kmeans(normalized_data, centers = k, nstart = 10)$tot.withinss
+})
+
+# Plot WSS (Total Within-Cluster Sum of Squares) to find the "elbow point"
+plot(1:10, wss, type = "b", pch = 19, frame = FALSE,
+     xlab = "Number of Clusters (k)",
+     ylab = "Total Within-Cluster Sum of Squares (WSS)",
+     main = "Elbow Method for Optimal k")
+
+# Step 4: K-Means Clustering
+# Perform K-Means clustering with the optimal number of clusters (from Elbow plot)
+set.seed(123)  # For reproducibility
+optimal_k <- 3  # Set based on elbow point
+kmeans_result <- kmeans(normalized_data, centers = optimal_k, nstart = 10)
+
+# Add K-Means cluster labels to the original dataset
+merged_data$KMeans_Cluster <- kmeans_result$cluster
+
+# Step 5: Hierarchical Clustering
+# Compute the distance matrix and hierarchical clustering using Ward's method
+distance_matrix <- dist(normalized_data, method = "euclidean")
+hclust_result <- hclust(distance_matrix, method = "ward.D2")
+
+# Cut tree into the same number of clusters as K-Means
+merged_data$HCluster <- cutree(hclust_result, k = optimal_k)
+
+# Plot the dendrogram for hierarchical clustering
+plot(hclust_result, main = "Hierarchical Clustering Dendrogram",
+     sub = "", xlab = "", cex = 0.7)
+rect.hclust(hclust_result, k = optimal_k, border = "red")  # Highlight clusters
+
+# Step 6: DBSCAN Clustering
+# Apply DBSCAN clustering
+eps_value <- 1  # Adjust based on dataset
+min_points <- 5
+dbscan_result <- dbscan(normalized_data, eps = eps_value, minPts = min_points)
+
+# Add DBSCAN cluster labels to the original dataset
+merged_data$DBSCAN_Cluster <- dbscan_result$cluster
+
+# Step 7: PAM Clustering
+# Perform Partitioning Around Medoids (PAM) clustering
+pam_result <- pam(normalized_data, k = optimal_k)
+
+# Add PAM cluster labels to the original dataset
+merged_data$PAM_Cluster <- pam_result$clustering
+
+# Step 8: Evaluation and Visualization
+
+# Visualize K-Means Clustering (Scatterplot)
+ggplot(merged_data, aes(x = `_spent_on_gaming_per_visit`, 
+                        y = `_spent_on_dining_per_visit`, 
+                        color = as.factor(KMeans_Cluster))) +
+  geom_point(alpha = 0.7, size = 3) +
+  labs(title = "K-Means Clustering: Gaming vs Dining Spending",
+       x = "Gaming Spending",
+       y = "Dining Spending",
+       color = "Cluster") +
+  theme_minimal()
+
+# Visualize Hierarchical Clustering (Boxplot)
+ggplot(merged_data, aes(x = as.factor(HCluster), y = Spent_per_stay, fill = as.factor(HCluster))) +
+  geom_boxplot() +
+  labs(title = "Spending per Stay by Hierarchical Clusters",
+       x = "Cluster",
+       y = "Spending per Stay ($)",
+       fill = "Cluster") +
+  theme_minimal()
+
+# Visualize DBSCAN Clustering (Scatterplot)
+ggplot(merged_data, aes(x = `_spent_on_gaming_per_visit`, 
+                        y = `_spent_on_dining_per_visit`, 
+                        color = as.factor(DBSCAN_Cluster))) +
+  geom_point(alpha = 0.7, size = 3) +
+  labs(title = "DBSCAN Clustering: Gaming vs Dining Spending",
+       x = "Gaming Spending",
+       y = "Dining Spending",
+       color = "Cluster") +
+  theme_minimal()
+
+# Visualize PAM Clustering (Scatterplot)
+ggplot(merged_data, aes(x = `_spent_on_gaming_per_visit`, 
+                        y = `_spent_on_dining_per_visit`, 
+                        color = as.factor(PAM_Cluster))) +
+  geom_point(alpha = 0.7, size = 3) +
+  labs(title = "PAM Clustering: Gaming vs Dining Spending",
+       x = "Gaming Spending",
+       y = "Dining Spending",
+       color = "Cluster") +
+  theme_minimal()
+
+# Step 9: Insights
+# Compute the average spending per cluster (K-Means as an example)
+cluster_summary <- merged_data %>%
+  group_by(KMeans_Cluster) %>%
+  summarise(
+    Avg_Dining_Spending = mean(`_spent_on_dining_per_visit`, na.rm = TRUE),
+    Avg_Gaming_Spending = mean(`_spent_on_gaming_per_visit`, na.rm = TRUE),
+    Avg_Entertainment_Spending = mean(`_spent_on_entertainment/non-gaming_per_visit`, na.rm = TRUE),
+    Avg_Total_Spending = mean(Spent_per_stay, na.rm = TRUE),
+    Avg_Days_Stay = mean(average_number_of_days_per_stay, na.rm = TRUE),
+    Avg_Age = mean(age, na.rm = TRUE),
+    Count = n()
+  )
+
+# Print the cluster summary
+print("Cluster Summary (K-Means):")
+print(cluster_summary)
+
+```
+
+```{r}
+install.packages("caret")
+install.packages("e1071")
+install.packages("pROC")
+install.packages("randomForest")
+install.packages("xgboost")
+install.packages("rpart")
+install.packages("class")
+
+```
+
+```{r}
+# Load necessary libraries
+library(dplyr)       # Data manipulation
+library(caret)       # Model training and evaluation
+library(randomForest) # Random Forest model
+library(xgboost)     # XGBoost model
+library(e1071)       # SVM and KNN
+library(pROC)        # For ROC and AUC
+library(rpart)       # For Decision Tree
+library(ggplot2)     # Visualization
+library(class)       # For Knn
+
+
+# Step 1: Define Target Variable
+threshold <- quantile(merged_data$Spent_per_stay, 0.75, na.rm = TRUE)
+merged_data$HighValue <- ifelse(merged_data$Spent_per_stay > threshold, 1, 0)
+
+# Step 2: Select Features
+features <- c("_spent_on_dining_per_visit",
+              "_spent_on_gaming_per_visit",
+              "_spent_on_entertainment/non-gaming_per_visit",
+              "_spent_on_casino_services_per_visit",
+              "average_number_of_days_per_stay",
+              "age")
+target_classification <- "HighValue"
+target_regression <- "Spent_per_stay"
+
+# Step 3: Split Data
+set.seed(123)
+training_indices <- createDataPartition(merged_data[[target_classification]], p = 0.7, list = FALSE)
+train_data <- merged_data[training_indices, ]
+test_data <- merged_data[-training_indices, ]
+
+# Normalize numeric features
+# Compute scaling parameters from training data
+scaling_params <- preProcess(train_data[, features], method = c("center", "scale"))
+
+# Apply scaling to both training and test data using the same parameters
+train_data_scaled <- predict(scaling_params, train_data)
+test_data_scaled <- predict(scaling_params, test_data)
+
+
+# Step 4: Modeling Techniques
+
+## Logistic Regression
+logistic_model <- glm(HighValue ~ ., 
+                      data = train_data_scaled[, c(features, target_classification)], 
+                      family = binomial)
+logistic_preds <- predict(logistic_model, test_data_scaled[, features], type = "response")
+logistic_class <- ifelse(logistic_preds > 0.5, 1, 0)
+
+## Decision Tree
+tree_model <- rpart(HighValue ~ ., 
+                    data = train_data_scaled[, c(features, target_classification)], 
+                    method = "class")
+tree_preds <- predict(tree_model, test_data_scaled[, features], type = "class")
+
+## K-Nearest Neighbors (KNN)
+knn_preds <- knn(train = train_data_scaled[, features], 
+                 test = test_data_scaled[, features], 
+                 cl = train_data_scaled$HighValue, 
+                 k = 5)
+```
+
+
+```{r}
+
+# Sanitize column names
+names(train_data_scaled) <- make.names(names(train_data_scaled))
+names(test_data_scaled) <- make.names(names(test_data_scaled))
+
+# Update the features list
+features <- c(
+  "X_spent_on_dining_per_visit",
+  "X_spent_on_gaming_per_visit",
+  "X_spent_on_entertainment.non.gaming_per_visit",
+  "X_spent_on_casino_services_per_visit",
+  "average_number_of_days_per_stay",
+  "age"
+)
+
+# Subset Train and Test Data
+train_data_scaled <- train_data_scaled[, c(features, "HighValue", "Spent_per_stay")]
+test_data_scaled <- test_data_scaled[, c(features, "HighValue", "Spent_per_stay")]
+
+# Print for Debugging
+print("Features List:")
+print(features)
+print("Columns in Train Data:")
+print(names(train_data_scaled))
+print("Columns in Test Data:")
+print(names(test_data_scaled))
+
+# Step 1: Random Forest Regression and Classification
+# Random Forest Classification
+rf_class_model <- randomForest(as.factor(HighValue) ~ ., 
+                               data = train_data_scaled[, c(features, "HighValue")], 
+                               ntree = 100)
+
+# Random Forest Regression
+rf_reg_model <- randomForest(Spent_per_stay ~ ., 
+                             data = train_data_scaled[, c(features, "Spent_per_stay")], 
+                             ntree = 100)
+
+# Predictions
+rf_class_preds <- predict(rf_class_model, test_data_scaled[, features])
+rf_reg_preds <- predict(rf_reg_model, test_data_scaled[, features])
+
+# Step 2: XGBoost Regression and Classification
+# Prepare XGBoost Data
+xgb_train <- xgb.DMatrix(data = as.matrix(train_data_scaled[, features]), 
+                         label = train_data_scaled$HighValue)
+xgb_train_reg <- xgb.DMatrix(data = as.matrix(train_data_scaled[, features]), 
+                             label = train_data_scaled$Spent_per_stay)
+xgb_test <- xgb.DMatrix(data = as.matrix(test_data_scaled[, features]))
+
+# XGBoost Classification
+xgb_class_model <- xgboost(data = xgb_train, 
+                           objective = "binary:logistic", 
+                           nrounds = 100, 
+                           max_depth = 6, 
+                           eta = 0.1, 
+                           verbose = 0)
+xgb_class_preds <- predict(xgb_class_model, xgb_test)
+xgb_class_labels <- ifelse(xgb_class_preds > 0.5, 1, 0)
+
+# XGBoost Regression
+xgb_reg_model <- xgboost(data = xgb_train_reg, 
+                         objective = "reg:squarederror", 
+                         nrounds = 100, 
+                         max_depth = 6, 
+                         eta = 0.1, 
+                         verbose = 0)
+xgb_reg_preds <- predict(xgb_reg_model, xgb_test)
+
+# Step 3: Evaluation Functions
+# Classification Evaluation
+evaluate_classification <- function(actual, predicted, model_name) {
+  conf_mat <- confusionMatrix(as.factor(predicted), as.factor(actual))
+  roc <- roc(actual, as.numeric(predicted))
+  auc <- auc(roc)
+  cat("\n------------------------------------------\n")
+  cat(paste("Evaluation for:", model_name, "\n"))
+  print(conf_mat)
+  cat(paste("ROC-AUC:", round(auc, 2), "\n"))
+  cat("------------------------------------------\n")
+}
+
+# Regression Evaluation
+evaluate_regression <- function(actual, predicted, model_name) {
+  mae <- mean(abs(predicted - actual))
+  mse <- mean((predicted - actual)^2)
+  r_squared <- 1 - (sum((predicted - actual)^2) / sum((actual - mean(actual))^2))
+  cat("\n------------------------------------------\n")
+  cat(paste("Evaluation for:", model_name, "\n"))
+  cat(paste("Mean Absolute Error (MAE):", round(mae, 2), "\n"))
+  cat(paste("Mean Squared Error (MSE):", round(mse, 2), "\n"))
+  cat(paste("R-squared (R²):", round(r_squared, 2), "\n"))
+  cat("------------------------------------------\n")
+}
+
+# Evaluate Classification Models
+evaluate_classification(test_data_scaled$HighValue, rf_class_preds, "Random Forest (Classification)")
+evaluate_classification(test_data_scaled$HighValue, xgb_class_labels, "XGBoost (Classification)")
+
+# Evaluate Regression Models
+evaluate_regression(test_data_scaled$Spent_per_stay, rf_reg_preds, "Random Forest (Regression)")
+evaluate_regression(test_data_scaled$Spent_per_stay, xgb_reg_preds, "XGBoost (Regression)")
+
+# Step 4: Visualizations
+# Feature Importance (Random Forest)
+rf_importance <- as.data.frame(importance(rf_class_model))
+rf_importance$Feature <- rownames(rf_importance)
+rownames(rf_importance) <- NULL
+
+# Plot Feature Importance
+ggplot(rf_importance, aes(x = reorder(Feature, MeanDecreaseGini), y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  labs(
+    title = "Feature Importance (Random Forest - Classification)",
+    x = "Features",
+    y = "Mean Decrease in Gini"
+  ) +
+  theme_minimal()
+
+# Actual vs Predicted: Random Forest Regression
+ggplot(data.frame(Actual = test_data_scaled$Spent_per_stay, Predicted = rf_reg_preds), 
+       aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.6, color = "green") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Actual vs Predicted Spending (Random Forest Regression)",
+    x = "Actual Spending",
+    y = "Predicted Spending"
+  ) +
+  theme_minimal()
+
+# Actual vs Predicted: XGBoost Regression
+ggplot(data.frame(Actual = test_data_scaled$Spent_per_stay, Predicted = xgb_reg_preds), 
+       aes(x = Actual, y = Predicted)) +
+  geom_point(alpha = 0.6, color = "blue") +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Actual vs Predicted Spending (XGBoost Regression)",
+    x = "Actual Spending",
+    y = "Predicted Spending"
+  ) +
+  theme_minimal()
+
+# Combined Actual vs Predicted for Both Models
+combined_data <- data.frame(
+  Actual = rep(test_data_scaled$Spent_per_stay, 2),
+  Predicted = c(rf_reg_preds, xgb_reg_preds),
+  Model = rep(c("Random Forest", "XGBoost"), each = length(rf_reg_preds))
+)
+
+ggplot(combined_data, aes(x = Actual, y = Predicted, color = Model)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "black", linetype = "dashed") +
+  labs(
+    title = "Actual vs Predicted Spending (Random Forest & XGBoost)",
+    x = "Actual Spending",
+    y = "Predicted Spending",
+    color = "Model"
+  ) +
+  theme_minimal()
+
+
+```
+
+
